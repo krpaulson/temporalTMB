@@ -36,7 +36,7 @@ Type objective_function<Type>::operator() ()
   Type nll = 0.0;
   
   // constraint -- is this an ok way to apply constraint?
-  //if (sum(delta_log_scale) == 0 && sum(delta_log_shape) == 0) {
+  //if (sum(delta) == 0) {
     
     // likelihood (thetahat-theta ~ N(0,V))
     MVNORM_t<Type> neg_log_dmvnorm(V);
