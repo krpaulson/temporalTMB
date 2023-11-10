@@ -1,5 +1,7 @@
 
 # RW2 temporal smoothing with TMB
+# Reference (Taylor Okonek): 
+# https://github.com/taylorokonek/stbench/blob/main/R/tmb_u5mr_intercepts_iidtime_rw2s.R
 
 library(tidyverse)
 library(TMB)
@@ -18,36 +20,80 @@ n_years <- 20
 # RW2 structure matrix
 inla.rw = utils::getFromNamespace("inla.rw", "INLA")
 R <- inla.rw(n_years, order = 2, sparse = T, scale.model = T)
+R <- R + diag(n_years) * 1e-6
 
 # load TMB model
 TMB::compile("rw2.cpp")
 dyn.load(TMB::dynlib("rw2"))
 
 # define negative posterior, proportional to negative log-likelihood x prior
-nll <- TMB::MakeADFun(
+obj <- TMB::MakeADFun(
   data = list(thetahat = df$log_shape_mean,
               V = V,
               R = R),
-  parameters = list(theta = rep(mean(df$log_shape_mean), n_years),
-                    intercept = mean(df$log_shape_mean),
-                    delta = rep(0, n_years),
-                    epsilon = rep(0, n_years),
-                    log_tau_delta = log(4),
-                    log_tau_epsilon = log(4))
+  parameters = list(intercept = 0,
+                    delta_t = rep(0, n_years),
+                    epsilon_t = rep(0, n_years),
+                    log_tau_delta = 0,
+                    log_tau_epsilon = 0),
+  random = c("epsilon_t", "delta_t"),
+  map = list(),
+  hessian = TRUE
 )
 
 # optimize to get MMAP estimate and standard error
-opt <- nlminb(nll$par, nll$fn, nll$gr)
-ests <- TMB::sdreport(nll)
+opt <- nlminb(obj$par, obj$fn, obj$gr)
+SD0 <- TMB::sdreport(obj,
+                     getJointPrecision = TRUE,
+                     getReportCovariance = TRUE,
+                     bias.correct = TRUE,
+                     bias.correct.control = list(sd = TRUE))
+
+
+# TMB post-processing ------------------------------------------------------
+
+# obtain point estimates (means) for fixed and random effects
+mu <- c(SD0$par.fixed, SD0$par.random)
+
+# get ids for different parameters
+t.parnames <- names(mu)
+t.intercept.idx <- grep("intercept", t.parnames)
+t.time.unstruct.idx <- grep("epsilon_t", t.parnames)
+t.time.struct.idx <- grep("delta_t", t.parnames)
+
+# create list of constraint matrices for these terms
+A.mat.list <- list()
+A.mat.list[[1]] <- matrix(1, nrow = 1, ncol = n_years)
+
+# sample
+# Reference: https://github.com/taylorokonek/stbench/blob/main/R/multiconstr_prec.R
+multiconstr_prec = utils::getFromNamespace("multiconstr_prec", "stbench")
+t.draws <- multiconstr_prec(mu = mu,
+                            prec = SD0$jointPrecision,
+                            n.sims = 1000,
+                            constrain.idx.list = list(t.time.struct.idx),
+                            A.mat.list = A.mat.list)
+
+# take the constrained draws
+t.draws <- t.draws$x.c
+
+# combine draws for linear predictor
+fitted <- 
+  matrix(rep(t.draws[t.intercept.idx,], n_years), nrow = n_years, byrow = T) +
+  t.draws[t.time.unstruct.idx,] + 
+  t.draws[t.time.struct.idx,]
+
+# get summaries
+df$log_shape_smoothed_med <- apply(fitted, 1, quantile, 0.5)
+df$log_shape_smoothed_lower <- apply(fitted, 1, quantile, 0.025)
+df$log_shape_smoothed_upper <- apply(fitted, 1, quantile, 0.975)
 
 # plot
-df$log_shape_smoothed <- ests$par.fixed[1:20]
-df$log_shape_smoothed_var <- diag(ests$cov.fixed)[1:20]
 ggplot(data = df, aes(x = period)) +
   geom_point(aes(y = log_shape_mean)) +
-  geom_line(aes(y = log_shape_smoothed)) +
-  geom_ribbon(aes(ymin = log_shape_smoothed - 1.96*sqrt(log_shape_smoothed_var),
-                  ymax = log_shape_smoothed + 1.96*sqrt(log_shape_smoothed_var)),
+  geom_line(aes(y = log_shape_smoothed_med)) +
+  geom_ribbon(aes(ymin = log_shape_smoothed_lower,
+                  ymax = log_shape_smoothed_upper),
               alpha = 0.2) +
   theme_bw()
 
