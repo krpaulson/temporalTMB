@@ -14,6 +14,11 @@ df <- fit_loglogistic$result
 V <- fit_loglogistic$variance[1:20, 1:20]
 n_years <- 20
 
+# just take diagonals to facilitate comparison to INLA
+diags <- diag(V)
+V <- matrix(0, nrow = 20, ncol = 20)
+diag(V) <- diags
+
 
 # TMB ---------------------------------------------------------------------
 
@@ -38,7 +43,8 @@ obj <- TMB::MakeADFun(
                     log_tau_epsilon = 0),
   random = c("epsilon_t", "delta_t"),
   map = list(),
-  hessian = TRUE
+  hessian = TRUE,
+  DLL = "rw2"
 )
 
 # optimize to get MMAP estimate and standard error
@@ -78,9 +84,9 @@ t.draws <- multiconstr_prec(mu = mu,
 t.draws <- t.draws$x.c
 
 # combine draws for linear predictor
-fitted <- 
+fitted <-
   matrix(rep(t.draws[t.intercept.idx,], n_years), nrow = n_years, byrow = T) +
-  t.draws[t.time.unstruct.idx,] + 
+  t.draws[t.time.unstruct.idx,] +
   t.draws[t.time.struct.idx,]
 
 # get summaries
@@ -127,3 +133,12 @@ ggplot(data = df, aes(x = period)) +
                   ymax = log_shape_smoothed_upper_inla),
               alpha = 0.2) +
   theme_bw()
+
+
+# compare -----------------------------------------------------------------
+
+ggplot(data = df, aes(x = log_shape_smoothed_med, y = log_shape_smoothed_inla, color = period)) +
+  geom_point() +
+  geom_abline(slope = 1, intercept = 0) +
+  theme_bw() +
+  labs(x = "tmb", y = "inla")
