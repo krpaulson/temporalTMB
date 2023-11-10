@@ -34,35 +34,36 @@ Type objective_function<Type>::operator() ()
 
   // initialize
   Type nll = 0.0;
+    
+  // likelihood (thetahat-theta ~ N(0,V))
+  MVNORM_t<Type> neg_log_dmvnorm(V);
+  nll += neg_log_dmvnorm(thetahat - theta);
   
-  // constraint -- is this an ok way to apply constraint?
-  //if (sum(delta) == 0) {
-    
-    // likelihood (thetahat-theta ~ N(0,V))
-    MVNORM_t<Type> neg_log_dmvnorm(V);
-    nll += neg_log_dmvnorm(thetahat - theta);
-    
-    // intercept
-    nll -= dnorm(intercept, Type(0.0), Type(31.62278), true);
-    
-    // RW2 (delta)
-    Eigen::SparseMatrix<Type> Q(n_years, n_years);
-    for (int i = 0; i < n_years; i++) {
-      for (int j = 0; j < n_years; j++) {
-        Q.coeffRef(i, j) = R.coeffRef(i, j) * exp(log_tau_delta);
-      }
+  // intercept
+  nll -= dnorm(intercept, Type(0.0), Type(31.62278), true);
+  
+  // RW2 (delta)
+  Eigen::SparseMatrix<Type> Q(n_years, n_years);
+  for (int i = 0; i < n_years; i++) {
+    for (int j = 0; j < n_years; j++) {
+      Q.coeffRef(i, j) = R.coeffRef(i, j) * exp(log_tau_delta);
     }
-    nll += GMRF(Q)(delta);
-    
-    // iid effects (epsilon)
-    Type sd_epsilon = exp(-0.5 * log_tau_epsilon);
-    nll -= sum(dnorm(epsilon, Type(0.0), sd_epsilon, true));
-    
-    // hyperpriors
-    nll -= dlgamma(log_tau_delta, Type(1.0), Type(1/0.00005), true);
-    nll -= dlgamma(log_tau_epsilon, Type(1.0), Type(1/0.00005), true);
-    
-  //}
+  }
+  nll += GMRF(Q)(delta);
+  
+  // RW2 constraint
+  Type sum_delta = delta.sum();
+  nll -= dnorm(sum_delta, Type(0.0), Type(0.00001), true);
+  
+  // iid effects (epsilon)
+  Type sd_epsilon = exp(-0.5 * log_tau_epsilon);
+  for (int i = 0; i < n_years; i++) {
+    nll -= dnorm(epsilon(i), Type(0.0), sd_epsilon, true);
+  }
+  
+  // hyperpriors
+  nll -= dlgamma(log_tau_delta, Type(1.0), Type(1/0.00005), true);
+  nll -= dlgamma(log_tau_epsilon, Type(1.0), Type(1/0.00005), true);
 
   return nll;
 }
