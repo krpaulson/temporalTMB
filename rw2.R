@@ -37,10 +37,10 @@ obj <- TMB::MakeADFun(
               V = V,
               R = R),
   parameters = list(intercept = 0,
-                    delta_t = rep(0, n_years),
-                    epsilon_t = rep(0, n_years),
                     log_tau_delta = 0,
-                    log_tau_epsilon = 0),
+                    log_tau_epsilon = 0,
+                    delta_t = rep(0, n_years),
+                    epsilon_t = rep(0, n_years)),
   random = c("epsilon_t", "delta_t"),
   map = list(),
   hessian = TRUE,
@@ -77,7 +77,7 @@ multiconstr_prec = utils::getFromNamespace("multiconstr_prec", "stbench")
 t.draws <- multiconstr_prec(mu = mu,
                             prec = SD0$jointPrecision,
                             n.sims = 1000,
-                            constrain.idx.list = list(t.time.struct.idx),
+                            constrain.idx.list = list(grep("delta_t", names(mu))),
                             A.mat.list = A.mat.list)
 
 # take the constrained draws
@@ -128,11 +128,22 @@ df$log_shape_smoothed_lower_inla <- fit_inla$summary.fitted.values$`0.025quant`
 df$log_shape_smoothed_upper_inla <- fit_inla$summary.fitted.values$`0.975quant`
 ggplot(data = df, aes(x = period)) +
   geom_point(aes(y = log_shape_mean)) +
-  geom_line(aes(y = log_shape_smoothed_inla)) +
+  geom_line(aes(y = log_shape_smoothed_inla,
+                color = "inla")) +
   geom_ribbon(aes(ymin = log_shape_smoothed_lower_inla,
-                  ymax = log_shape_smoothed_upper_inla),
+                  ymax = log_shape_smoothed_upper_inla,
+                  fill = "inla"),
               alpha = 0.2) +
-  theme_bw()
+  theme_bw() +
+  geom_line(aes(y = log_shape_smoothed_med, color = "tmb"), lty = "dashed") +
+  geom_ribbon(aes(ymin = log_shape_smoothed_lower,
+                  ymax = log_shape_smoothed_upper,
+                  fill = "tmb"),
+              alpha = 0.2) +
+  theme_bw() +
+  scale_color_manual(values = c("tmb" = "blue", "inla" = "red")) +
+  scale_fill_manual(values = c("tmb" = "blue", "inla" = "red")) +
+  labs(x = "year", y = "theta", color = "", fill = "")
 
 
 # compare -----------------------------------------------------------------

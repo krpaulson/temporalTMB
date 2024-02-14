@@ -27,10 +27,10 @@ Type objective_function<Type>::operator() ()
   
   // parameters
   PARAMETER(intercept);
-  PARAMETER_VECTOR(delta_t);
-  PARAMETER_VECTOR(epsilon_t);
   PARAMETER(log_tau_delta);
   PARAMETER(log_tau_epsilon);
+  PARAMETER_VECTOR(delta_t);
+  PARAMETER_VECTOR(epsilon_t);
   
   ////////////////////////
   // priors + hyperpriors
